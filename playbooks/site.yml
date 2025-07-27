@@ -23,3 +23,5 @@
 - import_playbook: setup-storage.yml
 - import_playbook: setup-network.yml  
 - import_playbook: setup-firewall.yml
+- import_playbook: create-templates.yml
+- import_playbook: deploy-vms.yml

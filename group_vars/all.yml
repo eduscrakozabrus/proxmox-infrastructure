@@ -1,0 +1,71 @@
+---
+# Global variables for all hosts
+
+# VM Templates configuration
+vm_templates:
+  ubuntu:
+    vmid: 9000
+    name: "ubuntu-22.04-template"
+    ostype: "l26"
+    memory: 2048
+    cores: 2
+    disk_size: "20G"
+    storage: "local"
+    # Используем cloud-ready образ Ubuntu
+    iso_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+    iso_name: "ubuntu-22.04-cloudimg-amd64.img"
+    cloud_init: true
+    
+  debian:
+    vmid: 9001
+    name: "debian-12-template"
+    ostype: "l26"
+    memory: 2048
+    cores: 2
+    disk_size: "20G"
+    storage: "local"
+    iso_url: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+    iso_name: "debian-12-generic-amd64.qcow2"
+    cloud_init: true
+
+# VMs to deploy
+vms:
+  - name: "web-server-01"
+    vmid: 101
+    template_id: 9000
+    memory: 4096
+    cores: 2
+    disk_size: "50G"
+    network:
+      bridge: "vmbr1"
+      ip: "10.0.1.10/24"
+      gateway: "10.0.1.1"
+    storage: "local"
+    tags: ["web", "production"]
+    
+  - name: "db-server-01"
+    vmid: 102
+    template_id: 9000
+    memory: 8192
+    cores: 4
+    disk_size: "100G"
+    network:
+      bridge: "vmbr2"
+      ip: "10.0.2.10/24"
+      gateway: "10.0.2.1"
+    storage: "local"
+    tags: ["database", "production"]
+
+# Cloud-init configuration
+cloud_init_user: "admin"
+cloud_init_password: "changeme123"
+cloud_init_ssh_keys: []
+
+# Default VM settings
+vm_start_after_create: false
+vm_autostart: false
+vm_protection: false
+
+# Network defaults
+default_nameservers: ["8.8.8.8", "8.8.4.4"]
+default_searchdomain: "local"

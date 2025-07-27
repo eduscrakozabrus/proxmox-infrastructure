@@ -1,0 +1,101 @@
+---
+- name: Check if template exists
+  shell: "qm list | grep {{ item.template_id }}"
+  register: template_check
+  failed_when: template_check.rc != 0
+  changed_when: false
+  with_items: "{{ vms }}"
+
+- name: Check if VMs already exist
+  shell: "qm list | grep {{ item.vmid }}"
+  register: existing_vms
+  failed_when: false
+  changed_when: false
+  with_items: "{{ vms }}"
+
+- name: Clone VMs from templates
+  shell: |
+    qm clone {{ item.template_id }} {{ item.vmid }} \
+      --name {{ item.name }} \
+      --full
+  with_items: "{{ vms }}"
+  when: existing_vms.results[ansible_loop.index0].rc != 0
+
+- name: Configure VM hardware
+  shell: |
+    qm set {{ item.vmid }} \
+      --memory {{ item.memory }} \
+      --cores {{ item.cores }} \
+      --scsi0 {{ item.storage }}:{{ item.disk_size }},format=qcow2
+  with_items: "{{ vms }}"
+  when: existing_vms.results[ansible_loop.index0].rc != 0
+
+- name: Configure VM network
+  shell: |
+    qm set {{ item.vmid }} \
+      --net0 virtio,bridge={{ item.network.bridge }}
+  with_items: "{{ vms }}"
+  when: existing_vms.results[ansible_loop.index0].rc != 0
+
+- name: Configure cloud-init network settings
+  shell: |
+    qm set {{ item.vmid }} \
+      --ipconfig0 ip={{ item.network.ip }},gw={{ item.network.gateway }} \
+      --nameserver "{{ default_nameservers | join(',') }}" \
+      --searchdomain {{ default_searchdomain }}
+  with_items: "{{ vms }}"
+  when: 
+    - existing_vms.results[ansible_loop.index0].rc != 0
+    - item.network.ip is defined
+
+- name: Set VM tags
+  shell: |
+    qm set {{ item.vmid }} --tags "{{ item.tags | join(',') }}"
+  with_items: "{{ vms }}"
+  when: 
+    - existing_vms.results[ansible_loop.index0].rc != 0
+    - item.tags is defined
+
+- name: Configure VM protection
+  shell: |
+    qm set {{ item.vmid }} --protection {{ vm_protection | lower }}
+  with_items: "{{ vms }}"
+  when: existing_vms.results[ansible_loop.index0].rc != 0
+
+- name: Configure VM autostart
+  shell: |
+    qm set {{ item.vmid }} --onboot {{ vm_autostart | lower }}
+  with_items: "{{ vms }}"
+  when: existing_vms.results[ansible_loop.index0].rc != 0
+
+- name: Start VMs if requested
+  shell: "qm start {{ item.vmid }}"
+  with_items: "{{ vms }}"
+  when: 
+    - existing_vms.results[ansible_loop.index0].rc != 0
+    - vm_start_after_create
+
+- name: Wait for VMs to boot (if started)
+  wait_for:
+    timeout: 60
+  when: vm_start_after_create
+
+- name: Display deployed VMs
+  shell: "qm list"
+  register: vm_list
+  changed_when: false
+
+- name: Show VM information
+  debug:
+    msg: "Deployed VMs: {{ vm_list.stdout_lines }}"
+
+- name: Show VM network configuration
+  shell: "qm config {{ item.vmid }} | grep -E '(net0|ipconfig0)'"
+  register: vm_network_config
+  changed_when: false
+  with_items: "{{ vms }}"
+
+- name: Display VM network settings
+  debug:
+    msg: "{{ item.item.name }} network: {{ item.stdout_lines }}"
+  with_items: "{{ vm_network_config.results }}"

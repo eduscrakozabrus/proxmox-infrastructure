@@ -1,0 +1,42 @@
+---
+# Default variables for VM deployment
+
+vms:
+  - name: "web-server-01"
+    vmid: 101
+    template_id: 9000
+    memory: 4096
+    cores: 2
+    disk_size: "50G"
+    network:
+      bridge: "vmbr1"
+      ip: "10.0.1.10/24"
+      gateway: "10.0.1.1"
+    storage: "local"
+    tags: ["web", "production"]
+    
+  - name: "db-server-01"
+    vmid: 102
+    template_id: 9000
+    memory: 8192
+    cores: 4
+    disk_size: "100G"
+    network:
+      bridge: "vmbr2"
+      ip: "10.0.2.10/24"
+      gateway: "10.0.2.1"
+    storage: "local"
+    tags: ["database", "production"]
+
+# VM deployment settings
+vm_start_after_create: true
+vm_autostart: false
+vm_protection: false
+
+# Cloud-init settings for deployed VMs
+default_cloud_init_user: "admin"
+default_cloud_init_password: "changeme123"
+
+# Network settings
+default_nameservers: ["8.8.8.8", "8.8.4.4"]
+default_searchdomain: "local"

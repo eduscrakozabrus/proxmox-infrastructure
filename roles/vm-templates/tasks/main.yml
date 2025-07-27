@@ -1,0 +1,106 @@
+---
+- name: Check if Proxmox VE is running
+  service:
+    name: pve-cluster
+    state: started
+  register: pve_status
+
+- name: Install required packages for template creation
+  apt:
+    name:
+      - qemu-guest-agent
+      - cloud-init
+      - wget
+      - curl
+    state: present
+    update_cache: yes
+
+- name: Create ISO storage directory
+  file:
+    path: "/var/lib/vz/template/iso"
+    state: directory
+    mode: '0755'
+
+- name: Download ISO images for templates
+  get_url:
+    url: "{{ item.value.iso_url }}"
+    dest: "/var/lib/vz/template/iso/{{ item.value.iso_name }}"
+    mode: '0644'
+    timeout: 1800
+  with_dict: "{{ vm_templates }}"
+  when: item.value.iso_url is defined
+
+- name: Check if template VMs already exist
+  shell: "qm list | grep {{ item.value.vmid }}"
+  register: existing_templates
+  failed_when: false
+  changed_when: false
+  with_dict: "{{ vm_templates }}"
+
+- name: Create VM templates
+  shell: |
+    qm create {{ item.value.vmid }} \
+      --name {{ item.value.name }} \
+      --memory {{ item.value.memory }} \
+      --cores {{ item.value.cores }} \
+      --net0 virtio,bridge=vmbr0 \
+      --scsi0 {{ item.value.storage }}:{{ item.value.disk_size }},format=qcow2 \
+      --ide2 {{ iso_storage }}:iso/{{ item.value.iso_name }},media=cdrom \
+      --ostype {{ item.value.ostype }} \
+      --boot c \
+      --bootdisk scsi0 \
+      --agent enabled=1 \
+      --vga qxl \
+      --tablet 1
+  with_dict: "{{ vm_templates }}"
+  when: 
+    - existing_templates.results[ansible_loop.index0].rc != 0
+    - item.value.iso_name is defined
+
+- name: Configure cloud-init for templates
+  shell: |
+    qm set {{ item.value.vmid }} \
+      --ide0 {{ item.value.storage }}:cloudinit \
+      --serial0 socket \
+      --vga serial0 \
+      --ciuser {{ cloud_init_user }} \
+      --cipassword {{ cloud_init_password }}
+  with_dict: "{{ vm_templates }}"
+  when: 
+    - item.value.cloud_init is defined
+    - item.value.cloud_init
+    - existing_templates.results[ansible_loop.index0].rc != 0
+
+- name: Add SSH keys to cloud-init (if provided)
+  shell: |
+    qm set {{ item.value.vmid }} --sshkey /tmp/authorized_keys
+  with_dict: "{{ vm_templates }}"
+  when:
+    - cloud_init_ssh_keys is defined
+    - cloud_init_ssh_keys | length > 0
+    - item.value.cloud_init is defined
+    - item.value.cloud_init
+    - existing_templates.results[ansible_loop.index0].rc != 0
+
+- name: Create SSH keys file for cloud-init
+  copy:
+    content: "{{ cloud_init_ssh_keys | join('\n') }}"
+    dest: /tmp/authorized_keys
+    mode: '0600'
+  when:
+    - cloud_init_ssh_keys is defined
+    - cloud_init_ssh_keys | length > 0
+
+- name: Convert VMs to templates
+  shell: "qm template {{ item.value.vmid }}"
+  with_dict: "{{ vm_templates }}"
+  when: existing_templates.results[ansible_loop.index0].rc != 0
+
+- name: Display created templates
+  shell: "qm list | grep template"
+  register: template_list
+  changed_when: false
+
+- name: Show template information
+  debug:
+    msg: "Created templates: {{ template_list.stdout_lines }}"

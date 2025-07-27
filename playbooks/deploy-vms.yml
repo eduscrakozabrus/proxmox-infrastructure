@@ -1,0 +1,16 @@
+---
+- name: Deploy Virtual Machines
+  hosts: proxmox
+  become: yes
+  
+  roles:
+    - vm-deploy
+    
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg: |
+          VMs deployed successfully:
+          {% for vm in vms %}
+          - {{ vm.name }} (ID: {{ vm.vmid }}) - {{ vm.network.ip if vm.network.ip is defined else 'DHCP' }}
+          {% endfor %}

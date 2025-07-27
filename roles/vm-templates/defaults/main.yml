@@ -1,0 +1,36 @@
+---
+# Default variables for VM templates
+
+vm_templates:
+  ubuntu:
+    vmid: 9000
+    name: "ubuntu-22.04-template"
+    ostype: "l26"
+    memory: 2048
+    cores: 2
+    disk_size: "20G"
+    storage: "local"
+    iso_url: "https://releases.ubuntu.com/22.04/ubuntu-22.04.3-live-server-amd64.iso"
+    iso_name: "ubuntu-22.04.3-live-server-amd64.iso"
+    cloud_init: true
+    
+  debian:
+    vmid: 9001
+    name: "debian-12-template"
+    ostype: "l26"
+    memory: 2048
+    cores: 2
+    disk_size: "20G"
+    storage: "local"
+    iso_url: "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.2.0-amd64-netinst.iso"
+    iso_name: "debian-12.2.0-amd64-netinst.iso"
+    cloud_init: true
+
+# Cloud-init user configuration
+cloud_init_user: "admin"
+cloud_init_password: "changeme123"
+cloud_init_ssh_keys: []
+
+# Template storage settings
+template_storage: "local"
+iso_storage: "local"

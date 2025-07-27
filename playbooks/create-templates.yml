@@ -1,0 +1,16 @@
+---
+- name: Create VM Templates
+  hosts: proxmox
+  become: yes
+  
+  roles:
+    - vm-templates
+    
+  post_tasks:
+    - name: Display template creation summary
+      debug:
+        msg: |
+          VM Templates created successfully:
+          {% for template_name, template_config in vm_templates.items() %}
+          - {{ template_config.name }} (ID: {{ template_config.vmid }})
+          {% endfor %}
