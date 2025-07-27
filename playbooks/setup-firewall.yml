@@ -41,7 +41,7 @@
         backup: yes
         
     - name: Show final firewall status
-      shell: ufw status verbose
+      shell: pve-firewall status
       register: firewall_status
       changed_when: false
       
