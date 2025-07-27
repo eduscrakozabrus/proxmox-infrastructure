@@ -2,6 +2,8 @@
 - name: Setup Proxmox Storage (LVM)
   hosts: proxmox
   become: yes
+  vars_files:
+    - ../group_vars/proxmox.yml
   
   tasks:
     - name: Check current LVM volumes

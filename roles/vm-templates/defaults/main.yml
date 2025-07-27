@@ -10,8 +10,8 @@ vm_templates:
     cores: 2
     disk_size: "20G"
     storage: "local"
-    iso_url: "https://releases.ubuntu.com/22.04/ubuntu-22.04.3-live-server-amd64.iso"
-    iso_name: "ubuntu-22.04.3-live-server-amd64.iso"
+    iso_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+    iso_name: "ubuntu-22.04-cloudimg-amd64.img"
     cloud_init: true
     
   debian:
@@ -22,8 +22,8 @@ vm_templates:
     cores: 2
     disk_size: "20G"
     storage: "local"
-    iso_url: "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.2.0-amd64-netinst.iso"
-    iso_name: "debian-12.2.0-amd64-netinst.iso"
+    iso_url: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+    iso_name: "debian-12-generic-amd64.qcow2"
     cloud_init: true
 
 # Cloud-init user configuration
