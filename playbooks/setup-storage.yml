@@ -1,0 +1,83 @@
+---
+- name: Setup Proxmox Storage (LVM)
+  hosts: proxmox
+  become: yes
+  
+  tasks:
+    - name: Check current LVM volumes
+      shell: lvs --noheadings -o lv_name {{ lvm_vg }}
+      register: existing_lvs
+      changed_when: false
+      failed_when: false
+      
+    - name: Display current LVM volumes
+      debug:
+        msg: "Existing volumes: {{ existing_lvs.stdout_lines }}"
+        
+    - name: Check available space in VG
+      shell: vgs --noheadings -o vg_free --units g {{ lvm_vg }}
+      register: vg_free_space
+      changed_when: false
+      
+    - name: Display available space
+      debug:
+        msg: "Available VG space: {{ vg_free_space.stdout.strip() }}"
+        
+    - name: Create LVM logical volumes
+      lvol:
+        vg: "{{ lvm_vg }}"
+        lv: "{{ item.name }}"
+        size: "{{ item.size }}"
+        state: present
+      with_items: "{{ lvm_volumes }}"
+      when: item.name not in existing_lvs.stdout
+      
+    - name: Create filesystems
+      filesystem:
+        fstype: "{{ item.fstype }}"
+        dev: "/dev/{{ lvm_vg }}/{{ item.name }}"
+        opts: -F
+      with_items: "{{ lvm_volumes }}"
+      when: item.name not in existing_lvs.stdout
+      
+    - name: Create mount directories
+      file:
+        path: "{{ item.mount_point }}"
+        state: directory
+        mode: '0755'
+      with_items: "{{ lvm_volumes }}"
+      
+    - name: Mount filesystems
+      mount:
+        path: "{{ item.mount_point }}"
+        src: "/dev/{{ lvm_vg }}/{{ item.name }}"
+        fstype: "{{ item.fstype }}"
+        opts: defaults
+        state: mounted
+      with_items: "{{ lvm_volumes }}"
+      
+    - name: Update fstab for persistent mounts
+      mount:
+        path: "{{ item.mount_point }}"
+        src: "/dev/{{ lvm_vg }}/{{ item.name }}"
+        fstype: "{{ item.fstype }}"
+        opts: defaults
+        state: present
+      with_items: "{{ lvm_volumes }}"
+      
+    - name: Set correct permissions for Proxmox directories
+      file:
+        path: "{{ item.mount_point }}"
+        owner: root
+        group: root
+        mode: '0755'
+      with_items: "{{ lvm_volumes }}"
+      
+    - name: Display final storage status
+      shell: df -h | grep -E "(vz|Filesystem)"
+      register: storage_status
+      changed_when: false
+      
+    - name: Show storage layout
+      debug:
+        msg: "{{ storage_status.stdout_lines }}"

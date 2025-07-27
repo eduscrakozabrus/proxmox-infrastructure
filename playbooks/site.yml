@@ -1,0 +1,25 @@
+---
+- name: Complete Proxmox Infrastructure Setup
+  hosts: proxmox
+  become: yes
+  serial: 1
+  
+  tasks:
+    - name: Check RAID status before proceeding
+      shell: cat /proc/mdstat | grep -E "resync|recovery"
+      register: raid_status
+      failed_when: false
+      changed_when: false
+      
+    - name: Display RAID status
+      debug:
+        msg: "RAID status: {{ raid_status.stdout_lines if raid_status.stdout_lines else 'RAID sync complete' }}"
+        
+    - name: Pause if RAID resync in progress
+      pause:
+        prompt: "RAID resync detected. Continue anyway? (yes/no)"
+      when: raid_status.rc == 0
+
+- import_playbook: setup-storage.yml
+- import_playbook: setup-network.yml  
+- import_playbook: setup-firewall.yml

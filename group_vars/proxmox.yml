@@ -1,0 +1,70 @@
+---
+# Сетевая конфигурация
+public_interface: enp6s0
+public_ip: 65.109.114.18/26
+gateway: 65.109.114.1
+
+# LVM конфигурация
+lvm_vg: vg0
+lvm_volumes:
+  - name: vm-data
+    size: 800G
+    mount_point: /var/lib/vz
+    fstype: ext4
+  - name: vm-images
+    size: 500G
+    mount_point: /var/lib/vz/images
+    fstype: ext4
+  - name: vm-backup
+    size: 400G
+    mount_point: /var/lib/vz/dump
+    fstype: ext4
+
+# Сетевые бриджи
+bridges:
+  vmbr0:
+    type: bridge
+    bridge_ports: "{{ public_interface }}"
+    bridge_stp: "off"
+    bridge_fd: 0
+    comment: "Public Bridge"
+  vmbr1:
+    type: bridge
+    address: 10.0.1.1/24
+    bridge_stp: "off"
+    bridge_fd: 0
+    comment: "Private NAT Network"
+  vmbr2:
+    type: bridge
+    address: 10.0.2.1/24
+    bridge_stp: "off"
+    bridge_fd: 0
+    comment: "DMZ Network"
+
+# NAT настройки
+nat_networks:
+  - "10.0.1.0/24"
+  - "10.0.2.0/24"
+
+# Файрвол правила
+firewall_rules:
+  - rule: allow
+    port: 22
+    proto: tcp
+    source: any
+    comment: "SSH access"
+  - rule: allow
+    port: 8006
+    proto: tcp
+    source: any
+    comment: "Proxmox Web UI"
+  - rule: allow
+    port: 5900:5999
+    proto: tcp
+    source: any
+    comment: "VNC Console"
+  - rule: deny
+    port: any
+    proto: any
+    source: any
+    comment: "Default deny"
