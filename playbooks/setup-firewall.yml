@@ -32,11 +32,17 @@
           policy_in: DROP
           policy_out: ACCEPT
           
+          [IPSET management]
+          65.109.114.0/26
+          10.0.1.0/24
+          10.0.2.0/24
+          
           [RULES]
           IN SSH(ACCEPT) -source +management
           IN ACCEPT -i vmbr1
           IN ACCEPT -i vmbr2
-          IN Proxmox(ACCEPT) -source +management
+          IN ACCEPT -p tcp -dport 8006 -source +management
+          IN ACCEPT -p tcp -dport 5900:5999 -source +management
         dest: /etc/pve/firewall/cluster.fw
         backup: yes
         
