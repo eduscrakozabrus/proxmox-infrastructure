@@ -6,44 +6,11 @@
     - ../group_vars/proxmox.yml
   
   tasks:
-    - name: Install ufw firewall
-      apt:
-        name: ufw
-        state: present
-        update_cache: yes
-        
-    - name: Reset ufw to defaults
-      ufw:
-        state: reset
-        
-    - name: Set ufw default policies
-      ufw:
-        direction: "{{ item.direction }}"
-        policy: "{{ item.policy }}"
-      with_items:
-        - { direction: 'incoming', policy: 'deny' }
-        - { direction: 'outgoing', policy: 'allow' }
-        - { direction: 'routed', policy: 'allow' }
-        
-    - name: Configure basic firewall rules
-      ufw:
-        rule: "{{ item.rule }}"
-        port: "{{ item.port }}"
-        proto: "{{ item.proto }}"
-        comment: "{{ item.comment }}"
-      with_items: "{{ firewall_rules }}"
-      when: item.port != "any"
-      
-    - name: Allow traffic between bridge networks
-      ufw:
-        rule: allow
-        from_ip: "{{ item }}"
-        comment: "Allow internal network {{ item }}"
-      with_items: "{{ nat_networks }}"
-      
-    - name: Enable ufw firewall
-      ufw:
-        state: enabled
+    - name: Ensure pve-firewall service is running
+      service:
+        name: pve-firewall
+        state: started
+        enabled: yes
         
     - name: Configure Proxmox built-in firewall
       shell: |
