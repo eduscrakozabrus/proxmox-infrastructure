@@ -24,6 +24,19 @@
         state: directory
         mode: '0755'
         
+    - name: Configure pveproxy to listen on IPv4
+      copy:
+        content: |
+          # Listen on both IPv4 and IPv6
+          LISTEN_IP="0.0.0.0"
+        dest: /etc/default/pveproxy
+        backup: yes
+        
+    - name: Restart pveproxy service
+      service:
+        name: pveproxy
+        state: restarted
+        
     - name: Configure cluster firewall rules
       copy:
         content: |
@@ -34,15 +47,17 @@
           
           [IPSET management]
           65.109.114.0/26
+          95.217.183.78
           10.0.1.0/24
           10.0.2.0/24
           
           [RULES]
           IN SSH(ACCEPT) -source +management
-          IN ACCEPT -i vmbr1
-          IN ACCEPT -i vmbr2
           IN ACCEPT -p tcp -dport 8006 -source +management
           IN ACCEPT -p tcp -dport 5900:5999 -source +management
+          IN ACCEPT -p tcp -dport 3000:9000 -source +management
+          IN ACCEPT -i vmbr1
+          IN ACCEPT -i vmbr2
         dest: /etc/pve/firewall/cluster.fw
         backup: yes
         

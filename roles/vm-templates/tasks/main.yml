@@ -21,6 +21,12 @@
     state: directory
     mode: '0755'
 
+- name: Create snippets directory for cloud-init
+  file:
+    path: "/var/lib/vz/snippets"
+    state: directory
+    mode: '0755'
+
 - name: Download ISO images for templates
   get_url:
     url: "{{ item.value.iso_url }}"
@@ -31,56 +37,59 @@
   when: item.value.iso_url is defined
 
 - name: Check if template VMs already exist
-  shell: "qm list | grep {{ item.value.vmid }}"
+  shell: "qm list | grep ' {{ item.value.vmid }} ' || true"
   register: existing_templates
   failed_when: false
   changed_when: false
   with_dict: "{{ vm_templates }}"
 
-- name: Create VM templates
+- name: Import cloud images as VM disks
   shell: |
-    qm create {{ item.value.vmid }} \
-      --name {{ item.value.name }} \
-      --memory {{ item.value.memory }} \
-      --cores {{ item.value.cores }} \
-      --net0 virtio,bridge=vmbr0 \
-      --scsi0 {{ item.value.storage }}:{{ item.value.disk_size }},format=qcow2 \
-      --ide2 {{ iso_storage }}:iso/{{ item.value.iso_name }},media=cdrom \
-      --ostype {{ item.value.ostype }} \
-      --boot c \
-      --bootdisk scsi0 \
-      --agent enabled=1 \
-      --vga qxl \
-      --tablet 1
+    qm create {{ item.value.vmid }} --name {{ item.value.name }} --memory {{ item.value.memory }} --cores {{ item.value.cores }} --net0 virtio,bridge=vmbr0 --ostype {{ item.value.ostype }}
+    qm importdisk {{ item.value.vmid }} /var/lib/vz/template/iso/{{ item.value.iso_name }} {{ item.value.storage }}
+    qm set {{ item.value.vmid }} --scsi0 {{ item.value.storage }}:{{ item.value.vmid }}/vm-{{ item.value.vmid }}-disk-0.raw --boot c --bootdisk scsi0 --agent enabled=1 --vga qxl --tablet 1
   with_dict: "{{ vm_templates }}"
+  loop_control:
+    index_var: template_index
   when: 
-    - existing_templates.results[ansible_loop.index0].rc != 0
+    - existing_templates.results[template_index].stdout == ""
     - item.value.iso_name is defined
 
 - name: Configure cloud-init for templates
   shell: |
-    qm set {{ item.value.vmid }} \
-      --ide0 {{ item.value.storage }}:cloudinit \
-      --serial0 socket \
-      --vga serial0 \
-      --ciuser {{ cloud_init_user }} \
-      --cipassword {{ cloud_init_password }}
+    qm set {{ item.value.vmid }} --ide0 {{ item.value.storage }}:cloudinit --serial0 socket --vga serial0 --ciuser {{ cloud_init_user }} --cipassword {{ cloud_init_password }} --nameserver {{ cloud_init_nameservers | join(',') }} --searchdomain {{ cloud_init_searchdomain }} --ciupgrade {{ cloud_init_upgrade | lower }}
   with_dict: "{{ vm_templates }}"
+  loop_control:
+    index_var: template_index
   when: 
     - item.value.cloud_init is defined
     - item.value.cloud_init
-    - existing_templates.results[ansible_loop.index0].rc != 0
+    - existing_templates.results[template_index].stdout == ""
+
+- name: Set custom cloud-init user data for templates (if advanced settings defined)
+  shell: |
+    qm set {{ item.value.vmid }} --cicustom "user=local:snippets/userdata.yaml"
+  with_dict: "{{ vm_templates }}"
+  loop_control:
+    index_var: template_index
+  when: 
+    - item.value.cloud_init is defined
+    - item.value.cloud_init
+    - existing_templates.results[template_index].stdout == ""
+    - (cloud_init_packages is defined and cloud_init_packages | length > 0) or (cloud_init_runcmd is defined and cloud_init_runcmd | length > 0)
 
 - name: Add SSH keys to cloud-init (if provided)
   shell: |
     qm set {{ item.value.vmid }} --sshkey /tmp/authorized_keys
   with_dict: "{{ vm_templates }}"
+  loop_control:
+    index_var: template_index
   when:
     - cloud_init_ssh_keys is defined
     - cloud_init_ssh_keys | length > 0
     - item.value.cloud_init is defined
     - item.value.cloud_init
-    - existing_templates.results[ansible_loop.index0].rc != 0
+    - existing_templates.results[template_index].stdout == ""
 
 - name: Create SSH keys file for cloud-init
   copy:
@@ -91,10 +100,53 @@
     - cloud_init_ssh_keys is defined
     - cloud_init_ssh_keys | length > 0
 
+- name: Create custom cloud-init user-data file
+  copy:
+    content: |
+      #cloud-config
+      users:
+        - name: {{ cloud_init_user }}
+          shell: /bin/bash
+          sudo: ALL=(ALL) NOPASSWD:ALL
+          groups: sudo
+          ssh_authorized_keys:
+      {% for key in cloud_init_ssh_keys %}
+            - {{ key }}
+      {% endfor %}
+      {% if cloud_init_password is defined %}
+          passwd: {{ cloud_init_password }}
+          lock_passwd: false
+      {% endif %}
+      
+      package_upgrade: {{ cloud_init_upgrade | lower }}
+      package_reboot_if_required: true
+      
+      {% if cloud_init_packages is defined and cloud_init_packages | length > 0 %}
+      packages:
+      {% for package in cloud_init_packages %}
+        - {{ package }}
+      {% endfor %}
+      {% endif %}
+      
+      {% if cloud_init_runcmd is defined and cloud_init_runcmd | length > 0 %}
+      runcmd:
+      {% for cmd in cloud_init_runcmd %}
+        - {{ cmd }}
+      {% endfor %}
+      {% endif %}
+      
+      final_message: "Cloud-init setup completed. System ready."
+    dest: /var/lib/vz/snippets/userdata.yaml
+    mode: '0644'
+  when:
+    - cloud_init_packages is defined or cloud_init_runcmd is defined
+
 - name: Convert VMs to templates
   shell: "qm template {{ item.value.vmid }}"
   with_dict: "{{ vm_templates }}"
-  when: existing_templates.results[ansible_loop.index0].rc != 0
+  loop_control:
+    index_var: template_index
+  when: existing_templates.results[template_index].stdout == ""
 
 - name: Display created templates
   shell: "qm list | grep template"

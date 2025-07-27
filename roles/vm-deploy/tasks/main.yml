@@ -19,23 +19,36 @@
       --name {{ item.name }} \
       --full
   with_items: "{{ vms }}"
-  when: existing_vms.results[ansible_loop.index0].rc != 0
+  loop_control:
+    index_var: vm_index
+  when: existing_vms.results[vm_index].rc != 0
 
 - name: Configure VM hardware
   shell: |
     qm set {{ item.vmid }} \
       --memory {{ item.memory }} \
-      --cores {{ item.cores }} \
-      --scsi0 {{ item.storage }}:{{ item.disk_size }},format=qcow2
+      --cores {{ item.cores }}
   with_items: "{{ vms }}"
-  when: existing_vms.results[ansible_loop.index0].rc != 0
+  loop_control:
+    index_var: vm_index
+  when: existing_vms.results[vm_index].rc != 0
+
+- name: Resize VM disk if needed
+  shell: |
+    qm disk resize {{ item.vmid }} scsi0 {{ item.disk_size }}
+  with_items: "{{ vms }}"
+  loop_control:
+    index_var: vm_index
+  when: existing_vms.results[vm_index].rc != 0
 
 - name: Configure VM network
   shell: |
     qm set {{ item.vmid }} \
       --net0 virtio,bridge={{ item.network.bridge }}
   with_items: "{{ vms }}"
-  when: existing_vms.results[ansible_loop.index0].rc != 0
+  loop_control:
+    index_var: vm_index
+  when: existing_vms.results[vm_index].rc != 0
 
 - name: Configure cloud-init network settings
   shell: |
@@ -44,35 +57,45 @@
       --nameserver "{{ default_nameservers | join(',') }}" \
       --searchdomain {{ default_searchdomain }}
   with_items: "{{ vms }}"
+  loop_control:
+    index_var: vm_index
   when: 
-    - existing_vms.results[ansible_loop.index0].rc != 0
+    - existing_vms.results[vm_index].rc != 0
     - item.network.ip is defined
 
 - name: Set VM tags
   shell: |
     qm set {{ item.vmid }} --tags "{{ item.tags | join(',') }}"
   with_items: "{{ vms }}"
+  loop_control:
+    index_var: vm_index
   when: 
-    - existing_vms.results[ansible_loop.index0].rc != 0
+    - existing_vms.results[vm_index].rc != 0
     - item.tags is defined
 
 - name: Configure VM protection
   shell: |
     qm set {{ item.vmid }} --protection {{ vm_protection | lower }}
   with_items: "{{ vms }}"
-  when: existing_vms.results[ansible_loop.index0].rc != 0
+  loop_control:
+    index_var: vm_index
+  when: existing_vms.results[vm_index].rc != 0
 
 - name: Configure VM autostart
   shell: |
     qm set {{ item.vmid }} --onboot {{ vm_autostart | lower }}
   with_items: "{{ vms }}"
-  when: existing_vms.results[ansible_loop.index0].rc != 0
+  loop_control:
+    index_var: vm_index
+  when: existing_vms.results[vm_index].rc != 0
 
 - name: Start VMs if requested
   shell: "qm start {{ item.vmid }}"
   with_items: "{{ vms }}"
+  loop_control:
+    index_var: vm_index
   when: 
-    - existing_vms.results[ansible_loop.index0].rc != 0
+    - existing_vms.results[vm_index].rc != 0
     - vm_start_after_create
 
 - name: Wait for VMs to boot (if started)

@@ -1,4 +1,4 @@
-# Настройка Proxmox VE с Ansible
+# Настройка Proxmox VE с Ansible - Детальная документация
 
 ## Текущая конфигурация сервера
 
@@ -15,98 +15,122 @@
 enp6s0: 65.109.114.18/26 (публичная сеть)
 IPv6: 2a01:4f9:3051:4052::2/64
 
-# Маршрутизация
-default via 65.109.114.1 dev enp6s0
-65.109.114.0/26 via 65.109.114.1 dev enp6s0
+# Linux Bridges
+vmbr0: Публичный бридж (привязан к enp6s0)
+vmbr1: Приватная сеть 10.0.1.0/24 с NAT
+vmbr2: DMZ сеть 10.0.2.0/24 с NAT
 ```
 
 ### Дисковая подсистема
 
 ```bash
-# RAID массивы
-md0: RAID1 256MB (/boot/efi) - nvme0n1p1 + nvme1n1p1
-md1: RAID1 1GB (/boot) - nvme0n1p2 + nvme1n1p2 
-md2: RAID1 1.75TB - nvme0n1p3 + nvme1n1p3 (resync в процессе: 13.2%)
-
 # LVM конфигурация
-VG: vg0 (1.75TB total, 1.72TB свободно)
+VG: vg0 (1.75TB total)
 ├── root (15GB) - система Proxmox
-└── swap (6GB) - файл подкачки
+├── swap (6GB) - файл подкачки
+├── vm-data (800GB) - /var/lib/vz - основное хранилище VM
+├── vm-images (500GB) - /var/lib/vz/images - образы и шаблоны
+└── vm-backup (400GB) - /var/lib/vz/dump - бэкапы
 
 # Диски
 nvme0n1: 1.7TB NVMe SSD
 nvme1n1: 1.7TB NVMe SSD (RAID1 mirror)
-
-# Proxmox Storage
-local: 14.67GB total (9.93GB доступно, 27% использовано)
-Типы: rootdir, vztmpl, images, iso, backup, snippets
 ```
 
-## План автоматизации с Ansible
+## Детали реализации
 
-### 1. Структура проекта
+### 1. Storage (LVM)
 
-```
-proxmox-infrastructure/
-├── inventory/
-│   ├── hosts.yml
-│   └── group_vars/
-│       └── proxmox.yml
-├── playbooks/
-│   ├── site.yml
-│   ├── setup-network.yml
-│   ├── create-templates.yml
-│   └── deploy-vms.yml
-├── roles/
-│   ├── proxmox-base/
-│   ├── proxmox-network/
-│   ├── vm-templates/
-│   └── vm-deploy/
-└── files/
-    └── templates/
-```
+**Плейбук:** `playbooks/setup-storage.yml`
 
-### 2. Сетевая архитектура
+Создает и настраивает LVM тома:
+- **vm-data**: 800GB для хранения дисков VM и контейнеров
+- **vm-images**: 500GB для ISO образов и шаблонов VM
+- **vm-backup**: 400GB для хранения бэкапов
 
-#### Планируемые бриджи:
-- `vmbr0` - Публичная сеть (bridged с enp6s0)
-- `vmbr1` - Приватная сеть (10.0.1.0/24) с NAT
-- `vmbr2` - DMZ сеть (10.0.2.0/24)
-- `vmbr3` - Management сеть (10.0.3.0/24)
+Особенности:
+- Проверка существующих томов перед созданием
+- Автоматическое форматирование в ext4
+- Монтирование в стандартные директории Proxmox
+- Обновление /etc/fstab для постоянного монтирования
 
-#### NAT конфигурация:
-```bash
-# iptables правила для NAT
-iptables -t nat -A POSTROUTING -s 10.0.1.0/24 -o enp6s0 -j MASQUERADE
-iptables -t nat -A POSTROUTING -s 10.0.2.0/24 -o enp6s0 -j MASQUERADE
-```
+### 2. Network (Bridges + NAT)
 
-### 3. Ansible роли
+**Плейбук:** `playbooks/setup-network.yml`
 
-#### Role: proxmox-base
-- Обновление системы
-- Настройка репозиториев
-- Базовая конфигурация кластера
+Настраивает сетевую инфраструктуру:
+- **vmbr0**: Публичный бридж для VM с публичными IP
+- **vmbr1**: Приватная сеть 10.0.1.1/24 (для внутренних сервисов)
+- **vmbr2**: DMZ сеть 10.0.2.1/24 (для публичных сервисов)
 
-#### Role: proxmox-network
-- Создание Linux Bridge интерфейсов
-- Настройка VLAN
-- Конфигурация NAT и firewall
+Особенности:
+- Включение IP forwarding (IPv4/IPv6)
+- Настройка NAT через iptables для приватных сетей
+- Создание бэкапа оригинального /etc/network/interfaces
+- Установка iptables-persistent для сохранения правил
 
-#### Role: vm-templates
-- Создание cloud-init шаблонов
-- Ubuntu 22.04 LTS template
-- CentOS Stream 9 template
+### 3. Firewall (pve-firewall)
 
-#### Role: vm-deploy
-- Автоматическое создание VM
-- Конфигурация сети
-- Управление ресурсами
+**Плейбук:** `playbooks/setup-firewall.yml`
 
-### 4. Inventory конфигурация
+Использует встроенный Proxmox firewall:
+- **Движок**: pve-firewall с iptables-legacy
+- **Политика**: DROP для входящих, ACCEPT для исходящих
+- **IPSet management**: Список разрешенных IP для управления
 
+Разрешенные порты:
+- SSH (22) - только с IP из management
+- Proxmox Web UI (8006) - только с IP из management  
+- VNC консоли (5900-5999) - только с IP из management
+- Весь трафик из внутренних сетей (vmbr1, vmbr2)
+
+Особенности:
+- Автоматическое переключение на iptables-legacy
+- Конфигурация через /etc/pve/firewall/cluster.fw
+- Настройка pveproxy для прослушивания IPv4
+
+### 4. VM Templates
+
+**Плейбук:** `playbooks/create-templates.yml`  
+**Роль:** `roles/vm-templates`
+
+Создает cloud-ready шаблоны:
+- **Ubuntu 22.04 LTS** (ID: 9000)
+  - Cloud-init образ с jammy-server-cloudimg-amd64.img
+  - 2 CPU, 2GB RAM, 20GB диск
+- **Debian 12** (ID: 9001)
+  - Cloud-init образ с debian-12-generic-amd64.qcow2
+  - 2 CPU, 2GB RAM, 20GB диск
+
+Особенности:
+- Автоматическая загрузка cloud образов
+- Настройка cloud-init (пользователь: admin, пароль: changeme123)
+- Поддержка SSH ключей через cloud-init
+- Конвертация в шаблоны после настройки
+
+### 5. VM Deployment
+
+**Плейбук:** `playbooks/deploy-vms.yml`  
+**Роль:** `roles/vm-deploy`
+
+Развертывает VM из шаблонов:
+- **web-server-01** (ID: 101)
+  - 4GB RAM, 2 CPU, 50GB диск
+  - Сеть: vmbr1 (10.0.1.10/24)
+- **db-server-01** (ID: 102)  
+  - 8GB RAM, 4 CPU, 100GB диск
+  - Сеть: vmbr2 (10.0.2.10/24)
+
+Особенности:
+- Клонирование из шаблонов
+- Настройка сети через cloud-init
+- Установка тегов для группировки
+- Опциональный автозапуск после создания
+
+## Важные файлы конфигурации
+
+### inventory/hosts.yml
 ```yaml
-# inventory/hosts.yml
 all:
   children:
     proxmox:
@@ -117,151 +141,81 @@ all:
           pve_node: pve-dev-01
 ```
 
-### 5. Основные переменные
+### group_vars/proxmox.yml
+Содержит основные переменные:
+- Сетевая конфигурация (IP, интерфейсы, бриджи)
+- LVM настройки (VG, размеры томов)
+- NAT сети для маршрутизации
+- Правила firewall
 
-```yaml
-# group_vars/proxmox.yml
-public_interface: enp6s0
-public_ip: 65.109.114.18/26
-gateway: 65.109.114.1
+### group_vars/all.yml
+Глобальные переменные:
+- Определения шаблонов VM
+- Конфигурации развертываемых VM
+- Cloud-init настройки
+- Сетевые параметры по умолчанию
 
-# Дисковая подсистема
-lvm_vg: vg0
-available_space: 1.72TB
-storage_pools:
-  vm_data:
-    size: 800G
-    path: /var/lib/vz
-  vm_images: 
-    size: 500G
-    path: /var/lib/vz/images
-  vm_backup:
-    size: 400G
-    path: /var/lib/vz/dump
+## Управление доступом
 
-bridges:
-  vmbr0:
-    ports: enp6s0
-    comment: "Public Bridge"
-  vmbr1:
-    comment: "Private NAT Network"
-    cidr: "10.0.1.1/24"
-  vmbr2:
-    comment: "DMZ Network"
-    cidr: "10.0.2.1/24"
-
-vm_templates:
-  ubuntu:
-    vmid: 9000
-    name: "ubuntu-22.04-template"
-    disk_size: 20G
-    cores: 2
-    memory: 2048
-    storage: vm_images
-  centos:
-    vmid: 9001
-    name: "centos-stream9-template"
-    disk_size: 20G
-    cores: 2
-    memory: 2048
-    storage: vm_images
+### Добавление нового администратора
+Отредактируйте `playbooks/setup-firewall.yml`, добавив IP в секцию IPSET management:
+```
+[IPSET management]
+65.109.114.0/26
+95.217.183.78      # Текущий администратор
+YOUR.NEW.IP.HERE   # Новый IP
+10.0.1.0/24
+10.0.2.0/24
 ```
 
-### 6. Основные плейбуки
-
-#### site.yml - Главный плейбук
-```yaml
----
-- import_playbook: setup-network.yml
-- import_playbook: create-templates.yml
-- import_playbook: deploy-vms.yml
-```
-
-#### setup-network.yml - Настройка сети
-```yaml
----
-- hosts: proxmox
-  roles:
-    - proxmox-base
-    - proxmox-network
-```
-
-### 7. Команды для запуска
-
+### Временное добавление IP
 ```bash
-# Проверка подключения
-ansible -i inventory/hosts.yml proxmox -m ping
-
-# Настройка сети
-ansible-playbook -i inventory/hosts.yml playbooks/setup-network.yml
-
-# Создание шаблонов
-ansible-playbook -i inventory/hosts.yml playbooks/create-templates.yml
-
-# Полная настройка
-ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+ansible pve-dev-01 -m shell -a "ipset add PVEFW-0-management-v4 YOUR.IP.HERE"
 ```
 
-### 8. Мониторинг и бэкапы
+## Решение проблем
 
-#### Автоматические бэкапы:
-- Ежедневные бэкапы в 23:00
-- Ротация: 7 дней локально
-- Экспорт в внешнее хранилище
+### Потеря доступа после настройки firewall
+1. Подключитесь через консоль провайдера
+2. Добавьте свой IP: `ipset add PVEFW-0-management-v4 YOUR.IP`
+3. Или временно отключите: `systemctl stop pve-firewall`
 
-#### Мониторинг:
-- Prometheus + Grafana
-- Алерты по email/Telegram
-- Мониторинг ресурсов VM
-
-### 9. Безопасность
-
-#### Firewall правила:
-- Закрытие ненужных портов
-- Разрешение только SSH (22) и Web UI (8006)
-- Ограничение доступа к Management сети
-
-#### Пользователи:
-- Отключение root SSH с паролем
-- Создание dedicated пользователей
-- Настройка sudo правил
-
-### 10. Управление дисковым пространством
-
-#### Создание дополнительных LVM томов:
+### Proxmox Web UI недоступен
+Проверьте, что pveproxy слушает IPv4:
 ```bash
-# Создание томов для VM данных
-lvcreate -L 800G -n vm-data vg0
-lvcreate -L 500G -n vm-images vg0  
-lvcreate -L 400G -n vm-backup vg0
-
-# Форматирование
-mkfs.ext4 /dev/vg0/vm-data
-mkfs.ext4 /dev/vg0/vm-images
-mkfs.ext4 /dev/vg0/vm-backup
-
-# Монтирование
-echo "/dev/vg0/vm-data /var/lib/vz ext4 defaults 0 2" >> /etc/fstab
-echo "/dev/vg0/vm-images /var/lib/vz/images ext4 defaults 0 2" >> /etc/fstab
-echo "/dev/vg0/vm-backup /var/lib/vz/dump ext4 defaults 0 2" >> /etc/fstab
+netstat -tlnp | grep 8006
+# Должно показать: 0.0.0.0:8006
 ```
 
-#### Мониторинг RAID:
-- Статус resync: `cat /proc/mdstat`
-- Проверка дисков: `smartctl -a /dev/nvme0n1`
-- Автоматические уведомления при сбоях
-
-#### Рекомендации:
-- **Дождаться завершения RAID resync** перед активным использованием
-- Настроить мониторинг SMART атрибутов дисков
-- Регулярные scrub операции для проверки целостности
+### NAT не работает для VM
+Проверьте правила iptables:
+```bash
+iptables -t nat -L POSTROUTING -n -v
+# Должны быть правила MASQUERADE для 10.0.1.0/24 и 10.0.2.0/24
+```
 
 ## Следующие шаги
 
-1. **Дождаться завершения RAID resync** (текущий прогресс: 13.2%)
-2. Создать дополнительные LVM тома для VM данных
-3. Создать структуру Ansible проекта
-4. Написать роль для настройки сети и хранилищ
-5. Создать шаблоны VM с cloud-init
-6. Автоматизировать развертывание
-7. Настроить мониторинг и бэкапы
+1. **Создание дополнительных шаблонов**
+   - Добавить шаблоны в `group_vars/all.yml`
+   - Запустить `ansible-playbook playbooks/create-templates.yml`
+
+2. **Развертывание новых VM**
+   - Определить VM в `group_vars/all.yml`
+   - Запустить `ansible-playbook playbooks/deploy-vms.yml`
+
+3. **Настройка бэкапов**
+   - Настроить расписание в Proxmox
+   - Добавить внешнее хранилище
+
+4. **Мониторинг**
+   - Установить Prometheus node exporter
+   - Настроить алерты
+
+## Безопасность
+
+- Firewall настроен в режиме whitelist (DROP по умолчанию)
+- SSH и Web UI доступны только с разрешенных IP
+- Внутренние сети изолированы с NAT
+- Все изменения создают бэкапы оригинальных файлов
+- Использует iptables-legacy для совместимости с Proxmox

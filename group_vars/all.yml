@@ -16,6 +16,19 @@ vm_templates:
     iso_name: "ubuntu-22.04-cloudimg-amd64.img"
     cloud_init: true
     
+  ubuntu24:
+    vmid: 9002
+    name: "ubuntu-24.04-template"
+    ostype: "l26"
+    memory: 2048
+    cores: 2
+    disk_size: "20G"
+    storage: "local"
+    # Используем cloud-ready образ Ubuntu 24.04
+    iso_url: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+    iso_name: "ubuntu-24.04-cloudimg-amd64.img"
+    cloud_init: true
+    
   debian:
     vmid: 9001
     name: "debian-12-template"
@@ -59,7 +72,76 @@ vms:
 # Cloud-init configuration
 cloud_init_user: "admin"
 cloud_init_password: "changeme123"
-cloud_init_ssh_keys: []
+cloud_init_ssh_keys:
+  - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDTGD1n24HiPV25HDXe6r75TfAnElCYH1KXxhtgOMMIuWuaMAzgMv+wQRe2Nzk/iYtvD9JKdEXWUN4werwuNZh+DTivzr56joummnpc05xoxlPqSfrpfumO/mm6ZOi82HkM21t76JjX2rsH1vuySxxVpSj00e0O96AWApuTwrjJa/x3UPw+5E+6DRsRd0EeafUBrSvrJSUisabqh71+yJhgYi1Ynew4JwMK6KQHi3NIhRDiKtEys1XaLA0fEAz3+/oCJVM4zlNCNZSL3XflPSbXTDMC+SMJWSOBVsopw+dAGezbbRtX3lnA88MiAcTTsvFG6FkIS7wIqiUfVnf7xCYqoh9yjN1WTdGlKe9QmcbRxDSKlN4HABC2N0AQOcpDn7LzUP5wuEHjfIXvUmV5Ltd3SMCyL3kDHd010hmRhNtkgnt4G7aTPyQpEDa+HwD5zsfeldad+cvdacvNthArO2D1hOtHaHKXYlkWj8y7LkWBYkLmQ39T9hjq02MLAuPf4IU= pavelschekin@Pavels-MacBook-Pro.local"
+  - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCxh7Am5zsp/ya2V7xXh3lEyFPfbWFpB9ozJNvfvpmrGmQPit5jgcO1SteMq67zpQyaK+ydvYabGj1p2JzEcqLRFnAxgvc2J4Ky2IqquDJqC0MUNjrCfw8+CwVYLBMKU2HCjhya/wOpUI2GOLZVRx2WZCUgrlJy1cWksCtmAD5MiGilJfo7CLZCWvw6bx6BO7KwHX6OH4oFeIIEvrczYWX5dpCjqtskQX6RSpu8aChhoAOsG8WEJK9touEqsn6urt9HcOdNddyuvf07CiL6MRSDvlFgs7CuCj8ZogytfPW0tgEvzaiIPEw/P1lR1g2kY5KRfB07ZCTJQLHOUzjcVKdz49u7Qsbt6AKeAj5vvQ6ATej86I2rG5gkUWCUdIAxwSGmqoZh7Z5LD/B3BmAV5OUnipjKKf/ZLLnzj1JJRAcUMt/kWfDoScFOGYtR7fJ/RgADBZ14wGwKe7tGTUowB8nPtiAC4xrFSKFRxhoVSTXKvbfQcHOZ9/fQwvrxzDVosiqNvKxmmLRze16SCCHSGZnST9JWsCdqIJ4lDXBKQffLwBIfR5Xp25GZ4ul34/W57QkbEBwUpDVc65DPt96WZnzRsldv/ds24axt61JLRrxabeZRHxobX39t1d0SS3JU71iBQYjLDc8quMOwQ49StYgoVwLGnjJHOxT3R2yM4Ciwiw== root@pve-dev-01"
+
+# Advanced Cloud-init settings
+cloud_init_upgrade: true              # Автообновление пакетов при первой загрузке
+cloud_init_nameservers: ["8.8.8.8", "1.1.1.1", "8.8.4.4"]  # DNS серверы
+cloud_init_searchdomain: "local"      # Домен поиска DNS
+cloud_init_packages:                  # Дополнительные пакеты для установки
+  - "curl"
+  - "wget" 
+  - "htop"
+  - "btop"                           # Современная альтернатива htop
+  - "nano"
+  - "vim"
+  - "git"
+  - "zsh"                            # Z shell
+  - "tmux"                           # Терминальный мультиплексор
+  - "screen"                         # Альтернатива tmux
+  - "tree"                           # Показ структуры директорий
+  - "ncdu"                           # Анализатор использования диска
+  - "iotop"                          # Мониторинг I/O
+  - "nmap"                           # Сканер сети/портов
+  - "netcat-openbsd"                 # Сетевой швейцарский нож
+  - "tcpdump"                        # Анализатор сетевого трафика
+  - "rsync"                          # Синхронизация файлов
+  - "jq"                             # JSON процессор
+  - "unzip"                          # Распаковка архивов
+  - "zip"
+  - "p7zip-full"                     # 7zip архиватор
+  - "build-essential"                # Компиляторы и инструменты сборки
+  - "software-properties-common"     # Управление репозиториями
+  - "apt-transport-https"            # HTTPS поддержка для apt
+  - "ca-certificates"                # SSL сертификаты
+  - "gnupg"                          # GPG ключи
+  - "lsb-release"                    # Информация о системе
+  - "unattended-upgrades"            # Автообновления безопасности
+  - "fail2ban"                       # Защита от брутфорса
+  - "ufw"                            # Простой файрвол
+  - "docker.io"                      # Docker контейнеры
+  - "docker-compose"                 # Docker Compose
+cloud_init_runcmd:                    # Команды для выполнения при первой загрузке
+  - "timedatectl set-timezone Europe/Moscow"
+  - "systemctl enable fail2ban"
+  - "systemctl enable docker"
+  - "usermod -aG docker admin"       # Добавить пользователя в группу docker
+  - "ufw --force enable"
+  - "ufw default deny incoming"
+  - "ufw default allow outgoing"
+  - "ufw allow ssh"
+  - "ufw allow 2375/tcp"             # Docker API (только если нужно)
+  - "ufw allow 2376/tcp"             # Docker Swarm (только если нужно)
+  - "echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf"
+  - "echo 'vm.swappiness=10' >> /etc/sysctl.conf"  # Уменьшить использование swap
+  - "echo 'fs.file-max=65536' >> /etc/sysctl.conf"  # Увеличить лимит файлов
+  - "sysctl -p"                      # Применить изменения sysctl
+  - "chsh -s /bin/zsh admin"         # Установить zsh как shell по умолчанию для admin
+  - "curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh | sudo -u admin sh" # Установить Oh My Zsh
+  - "echo 'alias ll=\"ls -alF\"' >> /home/admin/.bashrc"
+  - "echo 'alias la=\"ls -A\"' >> /home/admin/.bashrc"
+  - "echo 'alias l=\"ls -CF\"' >> /home/admin/.bashrc"
+  - "echo 'alias ..=\"cd ..\"' >> /home/admin/.bashrc"
+  - "echo 'alias ...=\"cd ../..\"' >> /home/admin/.bashrc"
+  - "echo 'alias grep=\"grep --color=auto\"' >> /home/admin/.bashrc"
+  - "echo 'alias fgrep=\"fgrep --color=auto\"' >> /home/admin/.bashrc"
+  - "echo 'alias egrep=\"egrep --color=auto\"' >> /home/admin/.bashrc"
+  - "echo 'export EDITOR=vim' >> /home/admin/.bashrc"
+  - "echo 'export HISTSIZE=10000' >> /home/admin/.bashrc"
+  - "echo 'export HISTFILESIZE=20000' >> /home/admin/.bashrc"
+  - "chown -R admin:admin /home/admin/.oh-my-zsh"  # Исправить права на Oh My Zsh
 
 # Default VM settings
 vm_start_after_create: false
