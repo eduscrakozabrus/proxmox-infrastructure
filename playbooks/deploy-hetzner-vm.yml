@@ -1,0 +1,119 @@
+---
+- name: Deploy VM with Hetzner External IP from Template
+  hosts: proxmox
+  become: yes
+  
+  vars:
+    template_vmid: 9020
+    vm_vmid: 105
+    vm_name: "web-public-server"
+    hetzner_external_ip: "65.109.114.49"
+    hetzner_gateway: "65.109.114.1"
+    hetzner_mac: "00:50:56:00:0F:8A"
+    hetzner_dns_servers: "185.12.64.1 185.12.64.2"
+    vm_memory: 4096
+    vm_cores: 2
+    vm_disk_size: "50G"
+    cloud_init_user: "ubuntu"
+    cloud_init_password: "changeme123"
+    ssh_keys_file: "~/.ssh/authorized_keys"
+    
+  tasks:
+    - name: Check if template exists
+      shell: "qm list | grep {{ template_vmid }}"
+      register: template_check
+      failed_when: template_check.rc != 0
+      changed_when: false
+      
+    - name: Check if VM already exists
+      shell: "qm list | grep {{ vm_vmid }}"
+      register: vm_exists
+      failed_when: false
+      changed_when: false
+      
+    - name: Stop and destroy existing VM if it exists
+      shell: "qm stop {{ vm_vmid }} && sleep 5 && qm destroy {{ vm_vmid }}"
+      when: vm_exists.rc == 0
+      ignore_errors: yes
+      
+    - name: Clone VM from template
+      shell: >
+        qm clone {{ template_vmid }} {{ vm_vmid }}
+        --name {{ vm_name }}
+        --full
+        
+    - name: Configure VM hardware
+      shell: >
+        qm set {{ vm_vmid }}
+        --memory {{ vm_memory }}
+        --cores {{ vm_cores }}
+        
+    - name: Resize VM disk
+      shell: >
+        qm disk resize {{ vm_vmid }} scsi0 {{ vm_disk_size }}
+        
+    - name: Configure VM network with Hetzner MAC
+      shell: >
+        qm set {{ vm_vmid }}
+        --net0 virtio,bridge=vmbr0,macaddr={{ hetzner_mac }}
+        
+    - name: Configure cloud-init user credentials
+      shell: >
+        qm set {{ vm_vmid }}
+        --sshkeys {{ ssh_keys_file }}
+        --ciuser {{ cloud_init_user }}
+        --cipassword {{ cloud_init_password }}
+        
+    - name: Configure network settings
+      shell: >
+        qm set {{ vm_vmid }}
+        --ipconfig0 ip={{ hetzner_external_ip }}/32,gw={{ hetzner_gateway }}
+        --nameserver "{{ hetzner_dns_servers }}"
+        --searchdomain local
+        
+    - name: Set VM tags
+      shell: >
+        qm set {{ vm_vmid }}
+        --tags "web,public,production,hetzner"
+        
+    - name: Start VM
+      shell: "qm start {{ vm_vmid }}"
+      
+    - name: Wait for VM to boot
+      wait_for:
+        timeout: 60
+        
+    - name: Display VM information
+      shell: "qm config {{ vm_vmid }}"
+      register: vm_config
+      
+    - name: Show VM configuration
+      debug:
+        msg: "VM {{ vm_name }} ({{ vm_vmid }}) deployed with external IP {{ hetzner_external_ip }}"
+        
+    - name: Configure VM firewall for external access
+      copy:
+        content: |
+          [OPTIONS]
+          enable: 1
+          policy_in: ACCEPT
+          policy_out: ACCEPT
+          
+          [RULES]
+          IN SSH(ACCEPT) -source +management
+          IN ACCEPT -source +management
+          IN ACCEPT -p icmp
+        dest: "/etc/pve/firewall/{{ vm_vmid }}.fw"
+        backup: yes
+        
+    - name: Reload Proxmox firewall
+      shell: pve-firewall compile
+      ignore_errors: yes
+      
+    - name: Show network configuration
+      shell: "qm cloudinit dump {{ vm_vmid }} network"
+      register: network_config
+      
+    - name: Display network config
+      debug:
+        var: network_config.stdout_lines

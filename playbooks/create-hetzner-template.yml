@@ -1,0 +1,65 @@
+---
+- name: Create Ubuntu 24.04 Template for Hetzner External IP
+  hosts: proxmox
+  become: yes
+  
+  vars:
+    template_vmid: 9020
+    template_name: "ubuntu-24.04-template"
+    ubuntu_image_url: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+    ubuntu_image_name: "ubuntu-24.04-server-cloudimg-amd64.img"
+    iso_storage_path: "/var/lib/vz/template/iso"
+    hetzner_dns_servers: "185.12.64.1 185.12.64.2"
+    
+  tasks:
+    - name: Check if template already exists
+      shell: "qm list | grep {{ template_vmid }}"
+      register: template_exists
+      failed_when: false
+      changed_when: false
+      
+    - name: Remove existing template if it exists
+      shell: "qm destroy {{ template_vmid }}"
+      when: template_exists.rc == 0
+      
+    - name: Download Ubuntu 24.04 cloud image
+      get_url:
+        url: "{{ ubuntu_image_url }}"
+        dest: "{{ iso_storage_path }}/{{ ubuntu_image_name }}"
+        mode: '0644'
+        timeout: 300
+      register: download_result
+      
+    - name: Create VM for template
+      shell: >
+        qm create {{ template_vmid }}
+        --memory 2048
+        --cores 2
+        --net0 virtio,bridge=vmbr0
+        --scsihw virtio-scsi-pci
+        --ostype l26
+        --name {{ template_name }}
+        
+    - name: Import cloud image as SCSI disk
+      shell: >
+        qm set {{ template_vmid }}
+        --scsi0 local:0,import-from={{ iso_storage_path }}/{{ ubuntu_image_name }}
+        
+    - name: Configure boot and console
+      shell: >
+        qm set {{ template_vmid }}
+        --boot order=scsi0
+        --serial0 socket
+        --vga serial0
+        
+    - name: Add cloud-init disk
+      shell: >
+        qm set {{ template_vmid }}
+        --ide2 local:cloudinit
+        
+    - name: Convert VM to template
+      shell: "qm template {{ template_vmid }}"
+      
+    - name: Display template creation result
+      debug:
+        msg: "Ubuntu 24.04 template ({{ template_vmid }}) created successfully"

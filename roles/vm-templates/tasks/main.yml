@@ -47,7 +47,10 @@
   shell: |
     qm create {{ item.value.vmid }} --name {{ item.value.name }} --memory {{ item.value.memory }} --cores {{ item.value.cores }} --net0 virtio,bridge=vmbr0 --ostype {{ item.value.ostype }}
     qm importdisk {{ item.value.vmid }} /var/lib/vz/template/iso/{{ item.value.iso_name }} {{ item.value.storage }}
-    qm set {{ item.value.vmid }} --scsi0 {{ item.value.storage }}:{{ item.value.vmid }}/vm-{{ item.value.vmid }}-disk-0.raw --boot c --bootdisk scsi0 --agent enabled=1 --vga qxl --tablet 1
+    qm set {{ item.value.vmid }} --scsi0 {{ item.value.storage }}:{{ item.value.vmid }}/vm-{{ item.value.vmid }}-disk-0.raw
+    qm set {{ item.value.vmid }} --boot order=scsi0 --bootdisk scsi0
+    qm set {{ item.value.vmid }} --agent enabled=1,fstrim_cloned_disks=1 --vga serial0 --serial0 socket
+    qm disk resize {{ item.value.vmid }} scsi0 {{ item.value.disk_size }}
   with_dict: "{{ vm_templates }}"
   loop_control:
     index_var: template_index
@@ -57,7 +60,10 @@
 
 - name: Configure cloud-init for templates
   shell: |
-    qm set {{ item.value.vmid }} --ide0 {{ item.value.storage }}:cloudinit --serial0 socket --vga serial0 --ciuser {{ cloud_init_user }} --cipassword {{ cloud_init_password }} --nameserver {{ cloud_init_nameservers | join(',') }} --searchdomain {{ cloud_init_searchdomain }} --ciupgrade {{ cloud_init_upgrade | lower }}
+    qm set {{ item.value.vmid }} --ide2 {{ item.value.storage }}:cloudinit
+    qm set {{ item.value.vmid }} --ciuser {{ cloud_init_user }} --cipassword {{ cloud_init_password }}
+    qm set {{ item.value.vmid }} --nameserver {{ cloud_init_nameservers | join(',') }} --searchdomain {{ cloud_init_searchdomain }}
+    qm set {{ item.value.vmid }} --ciupgrade {{ cloud_init_upgrade | lower }}
   with_dict: "{{ vm_templates }}"
   loop_control:
     index_var: template_index
@@ -78,9 +84,18 @@
     - existing_templates.results[template_index].stdout == ""
     - (cloud_init_packages is defined and cloud_init_packages | length > 0) or (cloud_init_runcmd is defined and cloud_init_runcmd | length > 0)
 
+- name: Create SSH keys file for cloud-init
+  copy:
+    content: "{{ cloud_init_ssh_keys | join('\n') }}"
+    dest: /tmp/authorized_keys
+    mode: '0600'
+  when:
+    - cloud_init_ssh_keys is defined
+    - cloud_init_ssh_keys | length > 0
+
 - name: Add SSH keys to cloud-init (if provided)
   shell: |
-    qm set {{ item.value.vmid }} --sshkey /tmp/authorized_keys
+    qm set {{ item.value.vmid }} --sshkeys /tmp/authorized_keys
   with_dict: "{{ vm_templates }}"
   loop_control:
     index_var: template_index
@@ -90,15 +105,6 @@
     - item.value.cloud_init is defined
     - item.value.cloud_init
     - existing_templates.results[template_index].stdout == ""
-
-- name: Create SSH keys file for cloud-init
-  copy:
-    content: "{{ cloud_init_ssh_keys | join('\n') }}"
-    dest: /tmp/authorized_keys
-    mode: '0600'
-  when:
-    - cloud_init_ssh_keys is defined
-    - cloud_init_ssh_keys | length > 0
 
 - name: Create custom cloud-init user-data file
   copy:
@@ -140,6 +146,57 @@
     mode: '0644'
   when:
     - cloud_init_packages is defined or cloud_init_runcmd is defined
+
+- name: Start VM for initial setup (fix GRUB configuration)
+  shell: "qm start {{ item.value.vmid }}"
+  with_dict: "{{ vm_templates }}"
+  loop_control:
+    index_var: template_index
+  when: existing_templates.results[template_index].stdout == ""
+  register: vm_started
+
+- name: Wait for VMs to boot and cloud-init to complete
+  wait_for:
+    timeout: 300
+  when: vm_started is changed
+
+- name: Fix GRUB and fstab configuration in running VMs
+  shell: |
+    # Wait for VM to be accessible via qm guest exec
+    for i in {1..30}; do
+      if qm guest exec {{ item.value.vmid }} --timeout 30 -- /bin/true 2>/dev/null; then
+        break
+      fi
+      sleep 10
+    done
+    # Update GRUB configuration
+    qm guest exec {{ item.value.vmid }} --timeout 60 -- sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=".*"/GRUB_CMDLINE_LINUX_DEFAULT="console=tty0 console=ttyS0,115200n8"/g' /etc/default/grub
+    qm guest exec {{ item.value.vmid }} --timeout 90 -- update-grub
+  with_dict: "{{ vm_templates }}"
+  loop_control:
+    index_var: template_index
+  when: 
+    - existing_templates.results[template_index].stdout == ""
+    - vm_started is changed
+
+- name: Clean cloud-init state for template
+  shell: |
+    qm guest exec {{ item.value.vmid }} --timeout 30 -- cloud-init clean
+  with_dict: "{{ vm_templates }}"
+  loop_control:
+    index_var: template_index
+  when: 
+    - existing_templates.results[template_index].stdout == ""
+    - vm_started is changed
+
+- name: Stop VMs after configuration
+  shell: "qm stop {{ item.value.vmid }}"
+  with_dict: "{{ vm_templates }}"
+  loop_control:
+    index_var: template_index
+  when: 
+    - existing_templates.results[template_index].stdout == ""
+    - vm_started is changed
 
 - name: Convert VMs to templates
   shell: "qm template {{ item.value.vmid }}"

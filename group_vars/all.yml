@@ -68,6 +68,20 @@ vms:
       gateway: "10.0.2.1"
     storage: "local"
     tags: ["database", "production"]
+    
+  - name: "web-public-01"
+    vmid: 103
+    template_id: 9002
+    memory: 4096
+    cores: 2
+    disk_size: "50G"
+    network:
+      bridge: "vmbr0"
+      ip: "65.109.114.49/32"
+      gateway: "65.109.114.18"
+      macaddr: "00:50:56:00:0F:8A"
+    storage: "local"
+    tags: ["web", "public", "production"]
 
 # Cloud-init configuration
 cloud_init_user: "admin"

@@ -17,7 +17,8 @@
   shell: |
     qm clone {{ item.template_id }} {{ item.vmid }} \
       --name {{ item.name }} \
-      --full
+      --full \
+      --storage {{ item.storage }}
   with_items: "{{ vms }}"
   loop_control:
     index_var: vm_index
@@ -28,6 +29,8 @@
     qm set {{ item.vmid }} \
       --memory {{ item.memory }} \
       --cores {{ item.cores }}
+    # Regenerate machine-id to avoid duplicate IDs
+    qm set {{ item.vmid }} --machine q35
   with_items: "{{ vms }}"
   loop_control:
     index_var: vm_index
@@ -44,7 +47,7 @@
 - name: Configure VM network
   shell: |
     qm set {{ item.vmid }} \
-      --net0 virtio,bridge={{ item.network.bridge }}
+      --net0 virtio,bridge={{ item.network.bridge }}{% if item.network.macaddr is defined %},macaddr={{ item.network.macaddr }}{% endif %}
   with_items: "{{ vms }}"
   loop_control:
     index_var: vm_index
@@ -62,6 +65,16 @@
   when: 
     - existing_vms.results[vm_index].rc != 0
     - item.network.ip is defined
+
+- name: Regenerate cloud-init configuration after cloning
+  shell: |
+    # Remove existing cloud-init disk and recreate it
+    qm set {{ item.vmid }} --delete ide2
+    qm set {{ item.vmid }} --ide2 {{ item.storage }}:cloudinit
+  with_items: "{{ vms }}"
+  loop_control:
+    index_var: vm_index
+  when: existing_vms.results[vm_index].rc != 0
 
 - name: Set VM tags
   shell: |
@@ -122,3 +135,16 @@
   debug:
     msg: "{{ item.item.name }} network: {{ item.stdout_lines }}"
   with_items: "{{ vm_network_config.results }}"
+
+- name: Check VM cloud-init status after deployment
+  shell: "qm cloudinit dump {{ item.vmid }} user"
+  register: cloudinit_status
+  changed_when: false
+  failed_when: false
+  with_items: "{{ vms }}"
+
+- name: Display cloud-init configuration
+  debug:
+    msg: "{{ item.item.name }} cloud-init: {{ item.stdout_lines | default('No cloud-init config') }}"
+  with_items: "{{ cloudinit_status.results }}"
+  when: cloudinit_status is defined

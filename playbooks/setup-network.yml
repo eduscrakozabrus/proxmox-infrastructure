@@ -77,6 +77,23 @@
         comment: "Allow established connections"
       notify: save iptables
       
+    - name: Configure Hetzner external IP routing (if defined)
+      shell: |
+        echo 1 > /proc/sys/net/ipv4/conf/vmbr0/proxy_arp
+        ip route add {{ hetzner_external_ip }}/32 dev vmbr0 || true
+      when: hetzner_external_ip is defined
+      
+    - name: Add Hetzner proxy ARP to sysctl
+      sysctl:
+        name: "{{ item }}"
+        value: '1'
+        state: present
+        reload: yes
+      with_items:
+        - net.ipv4.conf.default.proxy_arp
+        - net.ipv4.conf.vmbr0.proxy_arp
+      when: hetzner_external_ip is defined
+      
   handlers:
     - name: restart networking
       service:

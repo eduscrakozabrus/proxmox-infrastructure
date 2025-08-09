@@ -4,6 +4,9 @@ public_interface: enp6s0
 public_ip: 65.109.114.18/26
 gateway: 65.109.114.1
 
+# Hetzner external IP configuration
+hetzner_external_ip: 65.109.114.49
+
 # LVM конфигурация
 lvm_vg: vg0
 lvm_volumes:
